@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>PWA Dateien Generieren</title>
+    <style>
+        body { font-family: sans-serif; padding: 50px; line-height: 1.6; color: #333; }
+        .card { border: 1px solid #ccc; padding: 20px; border-radius: 8px; max-width: 500px; margin: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button { 
+            display: block; width: 100%; margin: 10px 0; padding: 10px; 
+            background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer; 
+        }
+        button:hover { background: #1b5e20; }
+        .info { font-size: 0.9em; color: #666; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Gartenplaner PWA Setup</h2>
+    <p>Klicke auf die Buttons, um die Dateikomponenten herunterzuladen:</p>
+    
+    <button onclick="download('index.html', getIndexContent())">1. index.html herunterladen</button>
+    <button onclick="download('manifest.json', getManifestContent())">2. manifest.json herunterladen</button>
+    <button onclick="download('sw.js', getSWContent())">3. sw.js herunterladen</button>
+
+    <div class="info">
+        <p><strong>Anleitung:</strong><br>
+        1. Alle 3 Dateien in <b>denselben Ordner</b> legen.<br>
+        2. Ein Bild namens <b>icon.png</b> (192x192px) in den Ordner legen.<br>
+        3. Die <code>index.html</code> über einen lokalen Webserver öffnen (z.B. mit der VS Code Erweiterung "Live Server"), damit die PWA-Funktionen aktiv werden.</p>
+    </div>
+</div>
+
+<script>
+    function download(filename, text) {
+        var element = document.createElement('a');
+        element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+        element.setAttribute('download', filename);
+        element.style.display = 'none';
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+    }
+
+    function getIndexContent() {
+        return `<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="manifest.json">
+    <title>Gartenplaner PWA</title>
+    <style>
+        :root { --primary: #2e7d32; --warn: #d32f2f; --good: #388e3c; }
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; background: #fafafa; }
+        header { background: var(--primary); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        #main-container { display: flex; flex: 1; overflow: hidden; }
+        #sidebar { width: 260px; background: #fff; border-right: 1px solid #ddd; padding: 15px; overflow-y: auto; }
+        #garden-plot { 
+            flex: 1; position: relative; background: #d7ccc8; 
+            overflow: auto; background-image: radial-gradient(#a1887f 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .area { position: absolute; border: 3px solid #5d4037; background: #8b451366; cursor: move; padding: 5px; min-width: 40px; min-height: 40px; }
+        .plant-chip { background: white; border-radius: 12px; padding: 4px 10px; margin: 3px; font-size: 13px; border: 1px solid #bbb; cursor: pointer; box-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
+        .msg-box { position: fixed; bottom: 20px; right: 20px; width: 280px; z-index: 100; }
+        .alert { padding: 12px; border-radius: 6px; margin-top: 8px; color: white; animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .alert-warn { background: var(--warn); }
+        .alert-good { background: var(--good); }
+        button { cursor: pointer; padding: 8px; margin-bottom: 5px; width: 100%; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
+        button:hover { background: #eee; }
+    </style>
+</head>
+<body>
+<header>
+    <strong>Garten-Assistent Pro</strong>
+    <div>
+        <button onclick="savePlan()" style="width:auto; margin:0; background: #1b5e20; color:white;">💾 Speichern</button>
+    </div>
+</header>
+<div id="main-container">
+    <div id="sidebar">
+        <h3>Flächen anlegen</h3>
+        <button onclick="addArea('beet', 200, 100)">📦 Beet 2x1m</button>
+        <button onclick="addArea('hochbeet', 150, 80)">🧱 Hochbeet 1.5x0.8m</button>
+        <button onclick="addArea('gewaechshaus', 250, 150)" style="background:#e1f5fe">🏠 Gewächshaus</button>
+        <hr>
+        <h3>Pflanzen wählen</h3>
+        <div id="plant-list"></div>
+    </div>
+    <div id="garden-plot"></div>
+</div>
+<div id="msg-box" class="msg-box"></div>
+<script>
+    const plants = [
+        { id: 'tom', name: 'Tomate', color: '#d32f2f', good: ['zwi','bas'], bad: ['kar'] },
+        { id: 'kar', name: 'Kartoffel', color: '#795548', good: ['bob'], bad: ['tom'] },
+        { id: 'zwi', name: 'Zwiebel', color: '#7b1fa2', good: ['moe','tom'], bad: ['boh'] },
+        { id: 'moe', name: 'Möhre', color: '#ef6c00', good: ['zwi'], bad: [] }
+    ];
+
+    const list = document.getElementById('plant-list');
+    plants.forEach(p => {
+        const btn = document.createElement('button');
+        btn.innerText = p.name;
+        btn.style.borderLeft = "5px solid " + p.color;
+        btn.onclick = () => addPlant(p);
+        list.appendChild(btn);
+    });
+
+    let selectedArea = null;
+
+    function addArea(type, w, h) {
+        const area = document.createElement('div');
+        area.className = "area";
+        if(type === 'gewaechshaus') area.style.background = "rgba(179, 229, 252, 0.5)";
+        area.style.width = w + 'px'; area.style.height = h + 'px';
+        area.style.left = '100px'; area.style.top = '100px';
+        area.onclick = (e) => {
+            e.stopPropagation();
+            if(selectedArea) selectedArea.style.borderColor = "#5d4037";
+            selectedArea = area;
+            area.style.borderColor = "#4caf50";
+        };
+        makeDraggable(area);
+        document.getElementById('garden-plot').appendChild(area);
+    }
+
+    function addPlant(p) {
+        if (!selectedArea) return alert("Klicke erst ein Beet an!");
+        const chip = document.createElement('div');
+        chip.className = 'plant-chip';
+        chip.innerText = p.name;
+        chip.dataset.id = p.id;
+        
+        const existing = Array.from(selectedArea.querySelectorAll('.plant-chip')).map(c => c.dataset.id);
+        existing.forEach(id => {
+            if (p.bad.includes(id)) notify("Konflikt: " + p.name + " & Nachbar!", "warn");
+            if (p.good.includes(id)) notify("Gute Nachbarn: " + p.name + "!", "good");
+        });
+        
+        selectedArea.appendChild(chip);
+    }
+
+    function notify(m, t) {
+        const d = document.createElement('div');
+        d.className = "alert alert-" + t; d.innerText = m;
+        document.getElementById('msg-box').appendChild(d);
+        setTimeout(() => d.remove(), 4000);
+    }
+
+    function makeDraggable(el) {
+        let p1=0, p2=0, p3=0, p4=0;
+        el.onmousedown = (e) => {
+            p3=e.clientX; p4=e.clientY;
+            document.onmouseup = () => { document.onmouseup = null; document.onmousemove = null; };
+            document.onmousemove = (e) => {
+                p1=p3-e.clientX; p2=p4-e.clientY;
+                p3=e.clientX; p4=e.clientY;
+                el.style.top = (el.offsetTop - p2) + "px";
+                el.style.left = (el.offsetLeft - p1) + "px";
+            };
+        };
+    }
+
+    function savePlan() {
+        localStorage.setItem('garden_save', document.getElementById('garden-plot').innerHTML);
+        alert("Plan gespeichert!");
+    }
+
+    window.onload = () => {
+        const saved = localStorage.getItem('garden_save');
+        if(saved) {
+            document.getElementById('garden-plot').innerHTML = saved;
+            document.querySelectorAll('.area').forEach(makeDraggable);
+        }
+    };
+
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>`;
+    }
+
+    function getManifestContent() {
+        return `{
+  "name": "Gartenplaner PWA",
+  "short_name": "Garten",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2e7d32",
+  "icons": [
+    { "src": "icon.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}`;
+    }
+
+    function getSWContent() {
+        return `const cacheName = 'garten-v1';
+const assets = ['./', 'index.html', 'manifest.json'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(cacheName).then(cache => cache.addAll(assets)));
+});
+
+self.addEventListener('fetch', e => {
+  e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
+});`;
+    }
+</script>
+
+</body>
+</html>
