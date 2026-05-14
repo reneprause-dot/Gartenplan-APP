@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- PWA & iOS Optimierung -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#2e7d32">
+    
+    <title>Garten-Assistent Cloud</title>
+    <style>
+        :root {
+            --primary: #2e7d32; --secondary: #1b5e20; --accent: #fb8c00;
+            --warn: #d32f2f; --good: #388e3c; --bg-canvas: #d7ccc8;
+        }
+
+        body { 
+            margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; 
+            font-family: -apple-system, sans-serif; overflow: hidden; background: #fafafa;
+            overscroll-behavior-y: contain;
+        }
+
+        header { 
+            background: var(--primary); color: white; 
+            padding: env(safe-area-inset-top) 15px 10px 15px; 
+            display: flex; justify-content: space-between; align-items: center; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10;
+        }
+
+        #main-container { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+        #sidebar { 
+            width: 160px; background: #fff; border-right: 1px solid #ddd; 
+            padding: 10px; overflow-y: auto; z-index: 5; font-size: 14px;
+        }
+
+        #garden-plot { 
+            flex: 1; position: relative; background-color: var(--bg-canvas); 
+            background-image: radial-gradient(#a1887f 1px, transparent 1px);
+            background-size: 20px 20px; overflow: auto; touch-action: none;
+        }
+
+        .area { 
+            position: absolute; border: 3px solid #5d4037; background: #8b451366; 
+            padding: 5px; min-width: 50px; min-height: 50px; box-sizing: border-box;
+            display: flex; flex-wrap: wrap; align-content: flex-start;
+        }
+        
+        .area-selected { border-color: #ffeb3b !important; box-shadow: 0 0 15px rgba(255,235,59,0.6); }
+
+        .plant-chip { 
+            background: white; border-radius: 12px; padding: 3px 8px; margin: 2px; 
+            font-size: 11px; border: 1px solid #bbb; font-weight: bold;
+        }
+
+        .photo-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; margin: 2px; border: 1px solid white; }
+
+        button { 
+            width: 100%; padding: 12px 5px; margin-bottom: 10px; border-radius: 8px; 
+            border: 1px solid #ccc; background: white; font-weight: bold; cursor: pointer;
+        }
+
+        .btn-sync { background: var(--secondary); color: white; border: none; padding: 8px 12px; width: auto; }
+        .btn-action { background: var(--accent); color: white; border: none; }
+
+        .msg-box { position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%); width: 85%; max-width: 350px; z-index: 100; }
+        .alert { padding: 12px; border-radius: 8px; margin-top: 8px; color: white; font-size: 13px; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+
+        input[type="password"] { width: 100%; padding: 8px; box-sizing: border-box; margin-top: 5px; border-radius: 4px; border: 1px solid #ddd; font-size: 10px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <strong>Garten Cloud</strong>
+    <button onclick="syncWithGithub()" class="btn-sync">☁️ Cloud Save</button>
+</header>
+
+<div id="main-container">
+    <div id="sidebar">
+        <button onclick="addArea(180, 100)">📦 Beet</button>
+        <button onclick="addArea(140, 70)">🧱 Hochbeet</button>
+        <button onclick="openCamera()" class="btn-action">📸 Foto</button>
+        <hr>
+        <div id="plant-list"></div>
+        <hr>
+        <small>GitHub Token:</small>
+        <input type="password" id="ghToken" placeholder="Hier einfügen...">
+    </div>
+
+    <div id="garden-plot"></div>
+</div>
+
+<div id="msg-box" class="msg-box"></div>
+
+<script>
+    // ============================================================
+    // === KONFIGURATION: BITTE HIER DEINE DATEN EINTRAGEN ===
+    // ============================================================
+    
+    const GH_USER = "DEIN_GITHUB_BENUTZERNAME"; // <--- Hier dein Name
+    const GH_REPO = "DEIN_REPOSITORY_NAME";    // <--- Hier der Name vom Projekt
+    const GH_PATH = "gartenplan.json";         // Dateiname (kann so bleiben)
+    
+    // ============================================================
+    // ============================================================
+
+    const plantData = [
+        { id: 'tom', name: 'Tomate', color: '#d32f2f', good: ['zwi','bas'], bad: ['kar'] },
+        { id: 'kar', name: 'Kartoffel', color: '#795548', good: ['bob'], bad: ['tom'] },
+        { id: 'zwi', name: 'Zwiebel', color: '#7b1fa2', good: ['moe','tom'], bad: [] },
+        { id: 'moe', name: 'Möhre', color: '#ef6c00', good: ['zwi'], bad: [] }
+    ];
+
+    let selectedArea = null;
+
+    // Initialisierung Pflanzenliste
+    const list = document.getElementById('plant-list');
+    plantData.forEach(p => {
+        const btn = document.createElement('button');
+        btn.innerText = p.name;
+        btn.style.borderLeft = `5px solid ${p.color}`;
+        btn.onclick = () => addPlant(p);
+        list.appendChild(btn);
+    });
+
+    // --- KERNFUNKTIONEN ---
+
+    function addArea(w, h) {
+        const area = document.createElement('div');
+        area.className = "area";
+        area.style.width = w + 'px'; area.style.height = h + 'px';
+        area.style.left = '30px'; area.style.top = '30px';
+        area.onclick = (e) => { e.stopPropagation(); selectArea(area); };
+        makeDraggable(area);
+        document.getElementById('garden-plot').appendChild(area);
+        selectArea(area);
+    }
+
+    function selectArea(area) {
+        document.querySelectorAll('.area').forEach(a => a.classList.remove('area-selected'));
+        selectedArea = area;
+        selectedArea.classList.add('area-selected');
+    }
+
+    function addPlant(p) {
+        if (!selectedArea) return notify("Beet antippen!", "#d32f2f");
+        const chip = document.createElement('div');
+        chip.className = 'plant-chip';
+        chip.style.color = p.color;
+        chip.innerText = p.name;
+        chip.dataset.id = p.id;
+
+        const existing = Array.from(selectedArea.querySelectorAll('.plant-chip')).map(c => c.dataset.id);
+        existing.forEach(id => {
+            if (p.bad.includes(id)) notify(`Achtung: ${p.name} mag Nachbarn nicht!`, "#d32f2f");
+            if (p.good.includes(id)) notify(`Super: ${p.name} liebt Nachbarn!`, "#388e3c");
+        });
+
+        selectedArea.appendChild(chip);
+    }
+
+    function openCamera() {
+        if (!selectedArea) return notify("Zuerst Beet wählen!", "#d32f2f");
+        const input = document.createElement('input');
+        input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment';
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = document.createElement('img');
+                img.src = event.target.result;
+                img.className = 'photo-thumb';
+                selectedArea.appendChild(img);
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    }
+
+    // --- CLOUD SYNC (GITHUB) ---
+
+    async function syncWithGithub() {
+        const token = document.getElementById('ghToken').value;
+        if (!token) return notify("Token fehlt!", "#d32f2f");
+
+        const content = document.getElementById('garden-plot').innerHTML;
+        const encoded = btoa(unescape(encodeURIComponent(content)));
+
+        notify("Speichere in Cloud...", "#fb8c00");
+
+        try {
+            const resGet = await fetch(`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/${GH_PATH}`, {
+                headers: { "Authorization": `token ${token}` }
+            });
+            const fileData = await resGet.json();
+            
+            const resPut = await fetch(`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/${GH_PATH}`, {
+                method: "PUT",
+                headers: { "Authorization": `token ${token}` },
+                body: JSON.stringify({
+                    message: "Update Gartenplan",
+                    content: encoded,
+                    sha: fileData.sha
+                })
+            });
+
+            if (resPut.ok) {
+                notify("Cloud-Update erfolgt!", "#388e3c");
+                localStorage.setItem('gh_token_saved', token);
+            }
+        } catch (err) {
+            notify("Fehler!", "#d32f2f");
+        }
+    }
+
+    // --- INITIALES LADEN BEIM START ---
+
+    window.onload = async () => {
+        const savedToken = localStorage.getItem('gh_token_saved');
+        if (savedToken) {
+            document.getElementById('ghToken').value = savedToken;
+            notify("Lade Cloud-Daten...", "#fb8c00");
+            try {
+                const res = await fetch(`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/${GH_PATH}`, {
+                    headers: { "Authorization": `token ${savedToken}` }
+                });
+                const data = await res.json();
+                const html = decodeURIComponent(escape(atob(data.content)));
+                if (html) {
+                    document.getElementById('garden-plot').innerHTML = html;
+                    document.querySelectorAll('.area').forEach(makeDraggable);
+                    notify("Garten geladen!", "#388e3c");
+                }
+            } catch (err) {
+                notify("Ladefehler - Cloud leer?", "#d32f2f");
+            }
+        }
+    };
+
+    // --- TOUCH & DRAG LOGIK ---
+
+    function makeDraggable(el) {
+        let x_off = 0, y_off = 0, active = false, startX, startY;
+        const start = (e) => {
+            active = true;
+            const t = e.type === "touchstart" ? e.touches[0] : e;
+            startX = t.clientX - x_off; startY = t.clientY - y_off;
+        };
+        const move = (e) => {
+            if (!active) return;
+            const t = e.type === "touchmove" ? e.touches[0] : e;
+            x_off = t.clientX - startX; y_off = t.clientY - startY;
+            el.style.transform = `translate3d(${x_off}px, ${y_off}px, 0)`;
+        };
+        el.addEventListener("mousedown", start); el.addEventListener("touchstart", start);
+        window.addEventListener("mousemove", move); window.addEventListener("touchmove", move, {passive:false});
+        window.addEventListener("mouseup", () => active = false); window.addEventListener("touchend", () => active = false);
+    }
+
+    function notify(m, c) {
+        const d = document.createElement('div');
+        d.className = "alert"; d.style.background = c; d.innerText = m;
+        document.getElementById('msg-box').appendChild(d);
+        setTimeout(() => d.remove(), 3000);
+    }
+
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
